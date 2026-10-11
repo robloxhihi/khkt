@@ -105,7 +105,7 @@ class MainActivity : ComponentActivity() {
                         isLoading = uiState.isLoading,
                         errorMessage = uiState.errorMessage,
                         onSignInClick = {
-                            viewModel.signInWithGoogle(this@MainActivity)
+                            viewModel.signInWithGoogle(this@MainActivity, selectedRoleForSignUp)
                         },
                         selectedRole = selectedRoleForSignUp,
                         onRoleSelected = { role ->

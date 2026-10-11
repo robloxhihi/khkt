@@ -370,10 +370,9 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Vespera Family được thiết kế theo chuẩn Clean Architecture độc lập backend. Tầng Domain & Data (Firestore, Models, State Engine) tương thích hoàn toàn để đóng gói sang iOS (qua Kotlin Multiplatform hoặc React Native Expo EAS Build).",
+                    text = "Gia Đình Việt thiết kế theo chuẩn Clean Architecture bảo mật cao, hỗ trợ đồng bộ thời gian thực đa nền tảng.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary,
-                    lineHeight = 20.sp
+                    color = TextSecondary
                 )
 
                 Spacer(modifier = Modifier.height(14.dp))

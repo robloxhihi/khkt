@@ -89,16 +89,16 @@ fun ScreenTimeScreen(
             .verticalScroll(scrollState)
             .padding(horizontal = 16.dp, vertical = 20.dp)
     ) {
-        if (uiState.isIosPreviewMode) {
+        if (uiState.isIosPreviewMode && uiState.activePairing != null) {
             val partnerLoc = uiState.partnerLocation
             IosDynamicIslandPill(
-                partnerName = if (isChild) uiState.activePairing?.parentName.orEmpty().ifEmpty { "Phụ huynh" }
-                              else uiState.activePairing?.childName.orEmpty().ifEmpty { "Bé An" },
-                safeZone = partnerLoc?.currentSafeZone?.ifEmpty { "Trường học" } ?: "Trường học",
-                batteryPct = partnerLoc?.batteryLevel ?: 84,
-                isCharging = partnerLoc?.isCharging ?: true,
-                activeApp = partnerLoc?.topActiveApp?.ifEmpty { "YouTube" } ?: "YouTube",
-                appMins = partnerLoc?.topActiveAppMinutes ?: 45
+                partnerName = if (isChild) uiState.activePairing.parentName
+                              else uiState.activePairing.childName,
+                safeZone = partnerLoc?.currentSafeZone?.ifEmpty { "Khu vực an toàn" } ?: "Khu vực an toàn",
+                batteryPct = partnerLoc?.batteryLevel ?: 80,
+                isCharging = partnerLoc?.isCharging ?: false,
+                activeApp = partnerLoc?.topActiveApp?.ifEmpty { "Hệ thống" } ?: "Hệ thống",
+                appMins = partnerLoc?.topActiveAppMinutes ?: 0
             )
             Spacer(modifier = Modifier.height(14.dp))
         }

@@ -195,38 +195,7 @@ fun SignInScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Helpful explanation card depending on selected role
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(SpaceCardSurface)
-                    .border(1.dp, SpaceCardBorder, RoundedCornerShape(14.dp))
-                    .padding(14.dp)
-            ) {
-                Row(verticalAlignment = Alignment.Top) {
-                    Text(
-                        text = if (selectedRole == UserRole.PARENT) "👨‍👧" else "🎒",
-                        fontSize = 18.sp,
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = if (selectedRole == UserRole.PARENT) {
-                            "Chế độ Phụ huynh: Nhập mã học sinh để định vị GPS vệ tinh theo thời gian thực, xem thời lượng sử dụng app và quản lý lịch trình an toàn."
-                        } else {
-                            "Chế độ Học sinh: Ứng dụng cung cấp mã kết nối HS riêng biệt, chạy ngầm GPS an toàn và tự động đồng bộ thống kê sử dụng app cho cha mẹ."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary,
-                        lineHeight = 18.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             // Section 2: Google Sign-In
             Row(
@@ -234,7 +203,7 @@ fun SignInScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "BƯỚC 2: XÁC THỰC TÀI KHOẢN",
+                    text = "BƯỚC 2: TIẾP TỤC VỚI GOOGLE",
                     style = MaterialTheme.typography.labelMedium,
                     color = NeonCyan,
                     fontWeight = FontWeight.Bold,
