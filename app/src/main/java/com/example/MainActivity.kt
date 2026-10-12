@@ -1,6 +1,7 @@
 package com.example
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
@@ -46,7 +47,7 @@ class MainActivity : ComponentActivity() {
         object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return VesperaViewModel(repository, telemetryHelper) as T
+                return VesperaViewModel(repository, telemetryHelper, applicationContext) as T
             }
         }
     }
@@ -55,16 +56,36 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                        android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+            )
+        }
+
         telemetryHelper = TelemetryAndUsageHelper(applicationContext)
         repository = VesperaRepository(applicationContext)
 
+        if (intent?.getBooleanExtra("TRIGGER_SOS", false) == true || intent?.action == "ACTION_SOS") {
+            viewModel.sendSosAlert()
+            Toast.makeText(this, "🚨 Đã tự động phát tín hiệu SOS khẩn cấp từ màn hình khóa!", Toast.LENGTH_LONG).show()
+        }
+
         setContent {
-            MyApplicationTheme {
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            MyApplicationTheme(
+                darkTheme = uiState.isDarkMode,
+                colorTheme = uiState.colorTheme
+            ) {
                 val context = LocalContext.current
-                val uiState by viewModel.uiState.collectAsStateWithLifecycle()
                 var selectedRoleForSignUp by remember { mutableStateOf(UserRole.PARENT) }
 
-                // Runtime permissions launcher for GPS & Notifications
+                // Runtime permissions launcher for GPS, SMS, Bluetooth Mesh & Notifications
                 val permissionsLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestMultiplePermissions()
                 ) { permissions ->
@@ -85,14 +106,10 @@ class MainActivity : ComponentActivity() {
                 }
 
                 LaunchedEffect(Unit) {
-                    val permsToRequest = mutableListOf(
-                        Manifest.permission.ACCESS_FINE_LOCATION,
-                        Manifest.permission.ACCESS_COARSE_LOCATION
-                    )
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        permsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+                    val missingPerms = com.example.service.sos.PermissionHandler.getMissingPermissions(applicationContext)
+                    if (missingPerms.isNotEmpty()) {
+                        permissionsLauncher.launch(missingPerms)
                     }
-                    permissionsLauncher.launch(permsToRequest.toTypedArray())
 
                     // Auto-start telemetry service if permission is already granted
                     if (telemetryHelper.hasLocationPermission()) {
@@ -106,6 +123,12 @@ class MainActivity : ComponentActivity() {
                         errorMessage = uiState.errorMessage,
                         onSignInClick = {
                             viewModel.signInWithGoogle(this@MainActivity, selectedRoleForSignUp)
+                        },
+                        onSignIn = { username, pass ->
+                            viewModel.signInWithUsername(username, pass, selectedRoleForSignUp)
+                        },
+                        onSignUp = { username, pass ->
+                            viewModel.signUpWithUsername(username, pass, selectedRoleForSignUp)
                         },
                         selectedRole = selectedRoleForSignUp,
                         onRoleSelected = { role ->
@@ -126,6 +149,15 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra("TRIGGER_SOS", false) == true || intent.action == "ACTION_SOS") {
+            viewModel.sendSosAlert()
+            Toast.makeText(this, "🚨 Đã tự động phát tín hiệu SOS khẩn cấp từ màn hình khóa!", Toast.LENGTH_LONG).show()
         }
     }
 

@@ -70,6 +70,16 @@ android {
   }
 }
 
+tasks.register<Exec>("generateDebugKeystore") {
+    val keystoreFile = file("${rootDir}/debug.keystore")
+    outputs.file(keystoreFile)
+    onlyIf { !keystoreFile.exists() }
+    commandLine("keytool", "-genkey", "-v", "-keystore", keystoreFile.absolutePath, "-storepass", "android", "-alias", "androiddebugkey", "-keypass", "android", "-keyalg", "RSA", "-keysize", "2048", "-validity", "100000", "-dname", "CN=Android Debug,O=Android,C=US")
+}
+tasks.named("preBuild").configure {
+    dependsOn("generateDebugKeystore")
+}
+
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
 // to match the convention used in Web projects.
 secrets {
@@ -124,6 +134,8 @@ dependencies {
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
   implementation(libs.play.services.location)
+  implementation(libs.play.services.nearby)
+  implementation(libs.socket.io.client)
   implementation(libs.retrofit)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)

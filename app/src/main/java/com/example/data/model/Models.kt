@@ -32,6 +32,7 @@ data class UserProfile(
     val photoUrl: String = "",
     val role: UserRole = UserRole.PARENT,
     val studentCode: String = "",
+    val verificationPin: String = "",
     val pairedWith: String = "",
     val activePairingId: String = "",
     val createdAt: Long = System.currentTimeMillis()
@@ -75,6 +76,7 @@ data class LocationData(
     val topActiveApp: String = "YouTube",
     val topActiveAppMinutes: Int = 45,
     val totalUsedMinutes: Int = 65,
+    val isSos: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis()
 )
 
@@ -129,6 +131,8 @@ data class FamilyMessage(
     val senderRole: UserRole = UserRole.PARENT,
     val text: String = "",
     val emotion: String? = null,
+    val mediaUrl: String? = null,
+    val mediaType: String? = null,
     val isStarred: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
 )
@@ -146,5 +150,27 @@ data class DetailedAppUsage(
     val minutesUsed: Int,
     val category: String,
     val lastTimeUsed: Long = System.currentTimeMillis()
+)
+
+data class LocationHistoryEntry(
+    val id: String = "",
+    val pairingId: String = "",
+    val userId: String = "",
+    val userName: String = "",
+    val latitude: Double = 21.0285,
+    val longitude: Double = 105.8542,
+    val placeName: String = "Điểm dừng chân",
+    val speed: Float = 0.0f,
+    val batteryLevel: Int = 85,
+    val isCharging: Boolean = false,
+    val timestamp: Long = System.currentTimeMillis(),
+    val dateStr: String = "",
+    val timeStr: String = "",
+    val year: Int = 2026,
+    val month: Int = 10,
+    val day: Int = 12,
+    val hour: Int = 0,
+    val minute: Int = 0,
+    val second: Int = 0
 )
 

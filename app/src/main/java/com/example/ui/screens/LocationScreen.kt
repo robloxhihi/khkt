@@ -22,12 +22,16 @@ import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -36,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.PairingStatus
@@ -64,7 +69,8 @@ fun LocationScreen(
     uiState: VesperaUiState,
     onRefreshLocation: () -> Unit,
     onRequestPrivacyClick: () -> Unit,
-    onSendZenlyBump: () -> Unit
+    onSendZenlyBump: () -> Unit,
+    onToggleLocationHistory: (Boolean) -> Unit
 ) {
     val scrollState = rememberScrollState()
     val isChild = uiState.userProfile?.role == UserRole.CHILD
@@ -216,31 +222,6 @@ fun LocationScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Real GPS Stats
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                BentoStatCard(
-                    modifier = Modifier.weight(1f),
-                    icon = Icons.Default.GpsFixed,
-                    iconTint = NeonCyan,
-                    title = "ĐỘ CHÍNH XÁC",
-                    value = "±$displayAcc m",
-                    subtitle = "Vệ tinh GPS thực tế",
-                    testTag = "accuracy_card"
-                )
-
-                BentoStatCard(
-                    modifier = Modifier.weight(1f),
-                    icon = Icons.Default.Speed,
-                    iconTint = NeonViolet,
-                    title = "TỐC ĐỘ",
-                    value = "${displaySpd.toInt()} km/h",
-                    subtitle = if (displaySpd > 5f) "Di chuyển" else "Đứng yên",
-                    testTag = "speed_card"
-                )
-            }
         } else {
             // PAIRED STATE: Display partner's real location
             if (isPrivacy) {
@@ -292,34 +273,6 @@ fun LocationScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Real Partner Stats
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    BentoStatCard(
-                        modifier = Modifier.weight(1f),
-                        icon = Icons.Default.GpsFixed,
-                        iconTint = NeonCyan,
-                        title = "ĐỘ CHÍNH XÁC",
-                        value = "±${partnerLoc.accuracy.toInt()} m",
-                        subtitle = "Cập nhật lúc ${timeFormat.format(Date(partnerLoc.updatedAt))}",
-                        testTag = "partner_accuracy_card"
-                    )
-
-                    BentoStatCard(
-                        modifier = Modifier.weight(1f),
-                        icon = Icons.Default.Speed,
-                        iconTint = NeonViolet,
-                        title = "TỐC ĐỘ",
-                        value = "${partnerLoc.speed.toInt()} km/h",
-                        subtitle = if (partnerLoc.speed > 5f) "Đang di chuyển" else "Đứng yên",
-                        testTag = "partner_speed_card"
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
                 // Zenly Bump Action
                 Button(
                     onClick = onSendZenlyBump,
@@ -368,6 +321,192 @@ fun LocationScreen(
                             )
                         ) {
                             Text("Làm mới ngay", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // Bật/tắt ghi lịch sử di chuyển
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = SpaceCardElevated),
+            border = androidx.compose.foundation.BorderStroke(1.dp, SpaceCardBorder)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Ghi nhận lịch sử di chuyển",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Tự động lưu ngày, giờ, địa điểm khi di chuyển > 5m",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                }
+                Switch(
+                    checked = uiState.isLocationHistoryEnabled,
+                    onCheckedChange = onToggleLocationHistory,
+                    modifier = Modifier.testTag("toggle_location_history")
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // LỊCH SỬ DI CHUYỂN (TIMELINE NGÀY THÁNG NĂM GIỜ VÀ ĐỊA ĐIỂM)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "LỊCH SỬ DI CHUYỂN",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Dòng thời gian lịch sử thực tế • Ngày, giờ, địa điểm",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(NeonCyan.copy(alpha = 0.15f))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = "${uiState.locationHistory.size} bản ghi",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = NeonCyan,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        if (uiState.locationHistory.isEmpty()) {
+            BentoCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Schedule,
+                        contentDescription = null,
+                        tint = TextMuted,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Chưa có lịch sử di chuyển mới hôm nay",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+                    Text(
+                        text = "Ứng dụng tự động ngủ khi đứng yên và chỉ ghi log khi di chuyển > 5m để tiết kiệm pin.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                uiState.locationHistory.forEachIndexed { index, entry ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = SpaceCardElevated),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, SpaceCardBorder)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Timeline dot & number
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (index == 0) NeonEmerald.copy(alpha = 0.2f)
+                                        else SpaceDarkBackground
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "${index + 1}",
+                                    color = if (index == 0) NeonEmerald else TextSecondary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = entry.placeName.ifEmpty { "Điểm dừng chân" },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = TextPrimary,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "${entry.timeStr.ifEmpty { "00:00:00" }} • ${entry.dateStr.ifEmpty { "Hôm nay" }}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = NeonCyan
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(2.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "📍 %.4f, %.4f".format(entry.latitude, entry.longitude),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextSecondary,
+                                        fontSize = 11.sp
+                                    )
+                                    Text(
+                                        text = "⚡ Pin: ${entry.batteryLevel}%${if (entry.isCharging) " (Sạc)" else ""}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (entry.batteryLevel <= 20) NeonRose else NeonEmerald,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
                         }
                     }
                 }

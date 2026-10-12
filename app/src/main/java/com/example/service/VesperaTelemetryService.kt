@@ -14,9 +14,11 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import java.util.Locale
 import com.example.MainActivity
 import com.example.R
 import com.example.data.model.LocationData
+import com.example.data.model.LocationHistoryEntry
 import com.example.data.repository.VesperaRepository
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -43,6 +45,8 @@ class VesperaTelemetryService : Service() {
     private var locationCallback: LocationCallback? = null
     private var periodicUsageJob: Job? = null
     private var lastKnownLocation: Location? = null
+    private var lastHistoryLoggedLocation: Location? = null
+    private var lastHistoryLoggedTime: Long = 0L
 
     companion object {
         const val CHANNEL_ID = "vespera_telemetry_channel"
@@ -123,13 +127,27 @@ class VesperaTelemetryService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        val sosIntent = Intent(this, MainActivity::class.java).apply {
+            action = "ACTION_SOS"
+            putExtra("TRIGGER_SOS", true)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val sosPendingIntent = PendingIntent.getActivity(
+            this,
+            1,
+            sosIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Gia Đình Việt đang chạy ngầm")
+            .setContentTitle("Gia Đình Việt • Giám sát & SOS 24/7")
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_vespera_logo)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .addAction(R.drawable.ic_vespera_logo, "🚨 BẤM SOS KHẨN CẤP", sosPendingIntent)
             .build()
     }
 
@@ -216,6 +234,12 @@ class VesperaTelemetryService : Service() {
         val currentUserName = FirebaseAuth.getInstance().currentUser?.displayName.orEmpty()
         val (batteryLevel, isCharging) = telemetryHelper.getBatteryInfo()
 
+        // Tiết kiệm pin thông minh & tự động kích hoạt khi di chuyển > 5m
+        val distanceFromLast = lastHistoryLoggedLocation?.distanceTo(location) ?: 999f
+        val isMoving = location.speed > 0.8f || distanceFromLast >= 5f
+        val now = System.currentTimeMillis()
+        val timeSinceLastLog = now - lastHistoryLoggedTime
+
         serviceScope.launch {
             try {
                 // Fetch real app usage from UsageStatsManager
@@ -257,9 +281,54 @@ class VesperaTelemetryService : Service() {
                     topActiveApp = topApp,
                     topActiveAppMinutes = topAppMins,
                     totalUsedMinutes = totalUsedMins,
-                    updatedAt = System.currentTimeMillis()
+                    updatedAt = now
                 )
                 repository.updateLocation(locData)
+
+                // TIẾT KIỆM PIN & GHI LỊCH SỬ DI CHUYỂN:
+                val prefs = getSharedPreferences("vespera_prefs", Context.MODE_PRIVATE)
+                val historyEnabled = prefs.getBoolean("history_enabled", true)
+                if (historyEnabled && (isMoving || timeSinceLastLog >= 15 * 60 * 1000L)) {
+                    val profile = repository.getUserProfile(currentUserId)
+                    val pairingId = profile?.activePairingId.orEmpty()
+
+                    val calendar = java.util.Calendar.getInstance()
+                    val year = calendar.get(java.util.Calendar.YEAR)
+                    val month = calendar.get(java.util.Calendar.MONTH) + 1
+                    val day = calendar.get(java.util.Calendar.DAY_OF_MONTH)
+                    val hour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
+                    val minute = calendar.get(java.util.Calendar.MINUTE)
+                    val second = calendar.get(java.util.Calendar.SECOND)
+
+                    val dateStr = String.format(Locale.getDefault(), "%02d/%02d/%04d", day, month, year)
+                    val timeStr = String.format(Locale.getDefault(), "%02d:%02d:%02d", hour, minute, second)
+
+                    val historyEntry = LocationHistoryEntry(
+                        id = "${currentUserId}_${now}",
+                        pairingId = pairingId,
+                        userId = currentUserId,
+                        userName = currentUserName,
+                        latitude = location.latitude,
+                        longitude = location.longitude,
+                        placeName = safeZone,
+                        speed = location.speed,
+                        batteryLevel = batteryLevel,
+                        isCharging = isCharging,
+                        timestamp = now,
+                        dateStr = dateStr,
+                        timeStr = timeStr,
+                        year = year,
+                        month = month,
+                        day = day,
+                        hour = hour,
+                        minute = minute,
+                        second = second
+                    )
+                    repository.saveLocationHistory(historyEntry)
+                    lastHistoryLoggedLocation = location
+                    lastHistoryLoggedTime = now
+                    Log.d("VesperaService", "Đã ghi lịch sử di chuyển: $safeZone lúc $timeStr ngày $dateStr")
+                }
             } catch (e: Exception) {
                 Log.w("VesperaService", "Background location & usage sync failed", e)
             }

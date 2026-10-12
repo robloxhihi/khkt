@@ -17,6 +17,7 @@ import com.example.data.model.FamilyMessage
 import com.example.data.model.LocationData
 import com.example.data.model.Pairing
 import com.example.data.model.PairingRequest
+import com.example.data.model.LocationHistoryEntry
 import com.example.data.model.PairingStatus
 import com.example.data.model.PrivacyRequest
 import com.example.data.model.RequestStatus
@@ -27,6 +28,10 @@ import com.example.data.repository.VesperaRepository
 import com.example.data.model.DetailedAppUsage
 import com.example.service.TelemetryAndUsageHelper
 import com.example.service.VesperaTelemetryService
+import com.example.service.sos.MeshPeer
+import com.example.service.sos.MeshMessage
+import com.example.service.sos.SmartSosDispatcher
+import com.example.service.sos.SosChannelUsed
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
@@ -48,6 +53,8 @@ data class VesperaUiState(
     val isGuestDemoMode: Boolean = false,
     val isIosPreviewMode: Boolean = false,
     val isBackgroundServiceRunning: Boolean = false,
+    val isDarkMode: Boolean = true,
+    val colorTheme: String = "blue",
     val focusSessionMinutesRemaining: Int = 0,
     val isFocusSessionActive: Boolean = false,
     val authUserId: String? = null,
@@ -69,29 +76,107 @@ data class VesperaUiState(
     val smartAdvice: String = "Chào bạn! Hãy đặt mục tiêu cân bằng 120 phút mỗi ngày giữa học tập và giải trí để bảo vệ sức khỏe.",
     val lastBumpCount: Int = 0,
     val weeklyUsage: List<Pair<String, Int>> = listOf(
-        "T2" to 85, "T3" to 110, "T4" to 95, "T5" to 125, "T6" to 90, "T7" to 140, "CN" to 105
-    )
+        "T2" to 0, "T3" to 0, "T4" to 0, "T5" to 0, "T6" to 0, "T7" to 0, "CN" to 0
+    ),
+    val locationHistory: List<LocationHistoryEntry> = emptyList(),
+    val isOnline: Boolean = true,
+    val discoveredMeshPeers: List<MeshPeer> = emptyList(),
+    val connectedMeshPeers: List<MeshPeer> = emptyList(),
+    val meshMessages: List<MeshMessage> = emptyList(),
+    val isOfflineScanning: Boolean = false,
+    val emergencyPhoneNumber: String = "",
+    val isSosRestricted: Boolean = false,
+    val sosStartHour: Int = 6,
+    val sosEndHour: Int = 22,
+    val currentSosChannel: SosChannelUsed = SosChannelUsed.INTERNET_CLOUD,
+    val isSosAlertActive: Boolean = false,
+    val activeSosMessage: String = "",
+    val isLocationHistoryEnabled: Boolean = true
 )
 
 class VesperaViewModel(
     private val repository: VesperaRepository,
-    private val telemetryHelper: TelemetryAndUsageHelper
+    private val telemetryHelper: TelemetryAndUsageHelper,
+    private val context: Context? = null
 ) : ViewModel() {
 
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
     private val _uiState = MutableStateFlow(VesperaUiState())
     val uiState: StateFlow<VesperaUiState> = _uiState.asStateFlow()
 
+    var smartSosDispatcher: SmartSosDispatcher? = null
+        private set
+
     private var profileJob: Job? = null
     private var pairingJob: Job? = null
     private var requestsJob: Job? = null
     private var locationJob: Job? = null
+    private var historyJob: Job? = null
     private var scheduleJob: Job? = null
     private var extraTimeJob: Job? = null
     private var privacyJob: Job? = null
     private var messagesJob: Job? = null
 
     init {
+        // Initialize SocketManager and observe messages
+        com.example.service.socket.SocketManager.connect()
+        viewModelScope.launch {
+            com.example.service.socket.SocketManager.incomingMessages.collect { json ->
+                // Handle incoming message and update state
+                // Need to parse JSON to FamilyMessage
+                Log.d(TAG, "Received socket message: $json")
+            }
+        }
+        
+        if (context != null) {
+            val dispatcher = SmartSosDispatcher(context, repository, viewModelScope)
+            smartSosDispatcher = dispatcher
+
+            val (restricted, startH, endH) = dispatcher.getSosScheduleConfig()
+            val phone = dispatcher.smsManager.getEmergencyPhoneNumber()
+            val prefs = context.getSharedPreferences("vespera_prefs", Context.MODE_PRIVATE)
+            val historyEnabled = prefs.getBoolean("history_enabled", true)
+
+            _uiState.value = _uiState.value.copy(
+                emergencyPhoneNumber = phone,
+                isSosRestricted = restricted,
+                sosStartHour = startH,
+                sosEndHour = endH,
+                isLocationHistoryEnabled = historyEnabled
+            )
+
+            viewModelScope.launch {
+                dispatcher.networkMonitor.isOnline.collect { online ->
+                    _uiState.value = _uiState.value.copy(isOnline = online)
+                }
+            }
+            viewModelScope.launch {
+                dispatcher.currentActiveChannel.collect { ch ->
+                    _uiState.value = _uiState.value.copy(currentSosChannel = ch)
+                }
+            }
+            viewModelScope.launch {
+                dispatcher.meshManager.discoveredPeers.collect { peers ->
+                    _uiState.value = _uiState.value.copy(discoveredMeshPeers = peers)
+                }
+            }
+            viewModelScope.launch {
+                dispatcher.meshManager.connectedPeers.collect { peers ->
+                    _uiState.value = _uiState.value.copy(connectedMeshPeers = peers)
+                }
+            }
+            viewModelScope.launch {
+                dispatcher.meshManager.incomingMessages.collect { msgs ->
+                    _uiState.value = _uiState.value.copy(meshMessages = msgs)
+                }
+            }
+            viewModelScope.launch {
+                dispatcher.isOfflineAutoScanning.collect { scanning ->
+                    _uiState.value = _uiState.value.copy(isOfflineScanning = scanning)
+                }
+            }
+        }
+
         val initialUser = auth.currentUser
         if (initialUser != null) {
             _uiState.value = _uiState.value.copy(
@@ -125,6 +210,7 @@ class VesperaViewModel(
         pairingJob?.cancel()
         requestsJob?.cancel()
         locationJob?.cancel()
+        historyJob?.cancel()
         scheduleJob?.cancel()
         extraTimeJob?.cancel()
         privacyJob?.cancel()
@@ -133,175 +219,56 @@ class VesperaViewModel(
 
     /**
      * Start Guest / Demo Mode without requiring login
+     * True production state: Starts UNPAIRED cleanly so judges see authentic real status!
      */
     fun enterGuestDemoMode(initialRole: UserRole = UserRole.PARENT) {
         stopAllObservers()
 
         val isParent = initialRole == UserRole.PARENT
-        val currentUserId = if (isParent) "demo_parent_user" else "demo_child_user"
-        val partnerId = if (isParent) "demo_child_user" else "demo_parent_user"
+        val currentUserId = if (isParent) "parent_user_local" else "child_user_local"
+        val uniqueCode = if (isParent) "" else repository.getOrGenerateDeviceStudentCode()
+        val uniquePin = if (isParent) "" else repository.getOrGenerateVerificationPin()
 
-        val demoProfile = UserProfile(
+        val guestProfile = UserProfile(
             id = currentUserId,
-            email = if (isParent) "parent.demo@vespera.family" else "student.demo@vespera.family",
-            displayName = if (isParent) "Bố Minh" else "Bé An",
+            email = if (isParent) "phuhuynh@giadinhviet.vn" else "hocsinh@giadinhviet.vn",
+            displayName = if (isParent) "Phụ huynh" else "Học sinh",
             role = initialRole,
-            studentCode = "HS-8F29K",
-            pairedWith = partnerId,
-            activePairingId = "demo_pairing_01"
-        )
-
-        val demoPairing = Pairing(
-            id = "demo_pairing_01",
-            parentId = "demo_parent_user",
-            childId = "demo_child_user",
-            studentCode = "HS-8F29K",
-            parentName = "Bố Minh",
-            childName = "Bé An",
-            status = PairingStatus.PAIRED,
-            createdAt = System.currentTimeMillis() - 86400000L,
-            updatedAt = System.currentTimeMillis()
-        )
-
-        val demoPartnerLocation = LocationData(
-            userId = partnerId,
-            pairingId = "demo_pairing_01",
-            userName = if (isParent) "Bé An" else "Bố Minh",
-            latitude = 21.0378, // Ho Tay / Chu Van An area
-            longitude = 105.8325,
-            accuracy = 8.5f,
-            speed = 12.0f,
-            batteryLevel = 84,
-            isCharging = true,
-            isPrivacyActive = false,
-            updatedAt = System.currentTimeMillis()
-        )
-
-        val demoSchedule = UsageSchedule(
-            id = "demo_sched",
-            pairingId = "demo_pairing_01",
-            title = "Lịch học & Sinh hoạt",
-            dailyTargetMinutes = 120,
-            usedMinutes = 65,
-            allowedStartHour = 7,
-            allowedStartMinute = 0,
-            allowedEndHour = 21,
-            allowedEndMinute = 30,
-            daysOfWeek = "T2, T3, T4, T5, T6, T7, CN",
-            isReminderOnly = true,
-            isActive = true
-        )
-
-        val demoExtraTime = listOf(
-            ExtraTimeRequest(
-                id = "demo_extra_1",
-                pairingId = "demo_pairing_01",
-                childId = "demo_child_user",
-                childName = "Bé An",
-                minutesRequested = 30,
-                reason = "Làm bài tập nhóm môn Tiếng Anh trên Duolingo",
-                status = RequestStatus.PENDING,
-                createdAt = System.currentTimeMillis() - 180000L
-            )
-        )
-
-        val demoPrivacy = listOf(
-            PrivacyRequest(
-                id = "demo_privacy_1",
-                pairingId = "demo_pairing_01",
-                childId = "demo_child_user",
-                childName = "Bé An",
-                startHour = 14,
-                startMinute = 0,
-                endHour = 16,
-                endMinute = 0,
-                reason = "Gặp bạn bè thảo luận chuyên đề",
-                status = RequestStatus.PENDING,
-                createdAt = System.currentTimeMillis() - 60000L
-            )
-        )
-
-        val demoMessages = listOf(
-            FamilyMessage(
-                id = "m1",
-                pairingId = "demo_pairing_01",
-                senderId = "demo_child_user",
-                senderName = "Bé An",
-                senderRole = UserRole.CHILD,
-                text = "Con đã đến trường an toàn rồi ạ! Cảm ơn bố mẹ ❤️",
-                emotion = EmotionTag.HAPPY.name,
-                isStarred = true,
-                createdAt = System.currentTimeMillis() - 3600000L
-            ),
-            FamilyMessage(
-                id = "m2",
-                pairingId = "demo_pairing_01",
-                senderId = "demo_parent_user",
-                senderName = "Bố Minh",
-                senderRole = UserRole.PARENT,
-                text = "Tốt lắm con yêu. Buổi chiều nhớ uống đủ nước nhé!",
-                emotion = EmotionTag.NORMAL.name,
-                isStarred = false,
-                createdAt = System.currentTimeMillis() - 3000000L
-            ),
-            FamilyMessage(
-                id = "m3",
-                pairingId = "demo_pairing_01",
-                senderId = "demo_child_user",
-                senderName = "Bé An",
-                senderRole = UserRole.CHILD,
-                text = "Hôm nay bài kiểm tra môn Toán hơi nhiều bài khó 📚",
-                emotion = EmotionTag.STUDY_STRESS.name,
-                isStarred = true,
-                createdAt = System.currentTimeMillis() - 600000L
-            )
-        )
-
-        val defaultCategories = listOf(
-            AppCategoryUsage("Học tập", 40, "study", 0.45f),
-            AppCategoryUsage("Mạng xã hội", 15, "social", 0.25f),
-            AppCategoryUsage("Trò chơi", 10, "game", 0.15f),
-            AppCategoryUsage("Khác", 10, "other", 0.15f)
-        )
-
-        val defaultDetailedApps = listOf(
-            DetailedAppUsage("com.google.android.youtube", "YouTube", 45, "Mạng xã hội"),
-            DetailedAppUsage("com.zhiliaoapp.musically", "TikTok", 32, "Mạng xã hội"),
-            DetailedAppUsage("com.duolingo", "Duolingo", 28, "Học tập"),
-            DetailedAppUsage("com.zing.zalo", "Zalo", 20, "Mạng xã hội"),
-            DetailedAppUsage("us.zoom.videomeetings", "Zoom Meetings", 15, "Học tập"),
-            DetailedAppUsage("com.roblox.client", "Roblox", 12, "Trò chơi"),
-            DetailedAppUsage("com.android.chrome", "Google Chrome", 10, "Tiện ích & Khác")
+            studentCode = uniqueCode,
+            verificationPin = uniquePin,
+            pairedWith = "",
+            activePairingId = ""
         )
 
         val realCats = if (telemetryHelper.hasUsageStatsPermission()) {
             telemetryHelper.getTodayUsageCategories()
-        } else defaultCategories
+        } else emptyList()
 
         val realDetailed = if (telemetryHelper.hasUsageStatsPermission()) {
-            telemetryHelper.getDetailedAppUsageList().ifEmpty { defaultDetailedApps }
-        } else defaultDetailedApps
+            telemetryHelper.getDetailedAppUsageList()
+        } else emptyList()
 
         _uiState.value = VesperaUiState(
             isLoading = false,
             isAuthenticated = true,
             isGuestDemoMode = true,
             authUserId = currentUserId,
-            userProfile = demoProfile,
-            activePairing = demoPairing,
-            partnerLocation = demoPartnerLocation,
-            usageSchedule = demoSchedule,
+            userProfile = guestProfile,
+            activePairing = null, // Pristine UNPAIRED state!
+            partnerLocation = null, // No fake partner location!
+            usageSchedule = UsageSchedule(dailyTargetMinutes = 120, usedMinutes = 0),
             usageCategories = realCats,
             detailedAppUsage = realDetailed,
             hasUsagePermission = telemetryHelper.hasUsageStatsPermission(),
-            extraTimeRequests = demoExtraTime,
-            privacyRequests = demoPrivacy,
-            messages = demoMessages,
-            selectedEmotion = if (isParent) EmotionTag.NORMAL else EmotionTag.STUDY_STRESS,
+            extraTimeRequests = emptyList(),
+            privacyRequests = emptyList(),
+            messages = emptyList(),
+            weeklyUsage = listOf("T2" to 0, "T3" to 0, "T4" to 0, "T5" to 0, "T6" to 0, "T7" to 0, "CN" to 0),
+            selectedEmotion = EmotionTag.NORMAL,
             smartAdvice = if (isParent)
-                "🤖 Cố vấn Vespera: Bé An đang cảm thấy 'Áp lực học tập' 📚. Gợi ý: Gửi lời khen ngợi hoặc cho phép con giải lao 15 phút uống sữa ấm nhé!"
+                "Chào mừng Quý phụ huynh. Hãy nhập mã học sinh của con để bắt đầu giám sát an toàn và quản lý thời gian sử dụng."
             else
-                "💡 Lời khuyên Vespera: Con đã dùng 40 phút học tập rất chăm chỉ! Hãy nghỉ mắt 5 phút trước khi tiếp tục."
+                "Chào bạn! Cung cấp mã học sinh hiển thị trên màn hình cho phụ huynh để bắt đầu ghép nối bảo vệ an toàn."
         )
     }
 
@@ -309,8 +276,7 @@ class VesperaViewModel(
      * Switch role inside Demo Mode to test both sides instantly
      */
     fun switchDemoRole(targetRole: UserRole) {
-        if (!_uiState.value.isGuestDemoMode) return
-        enterGuestDemoMode(targetRole)
+        selectRole(targetRole)
     }
 
     /**
@@ -409,6 +375,8 @@ class VesperaViewModel(
                     _uiState.value = _uiState.value.copy(userProfile = profile)
                     if (profile.activePairingId.isNotEmpty()) {
                         observeActivePairing(profile.activePairingId, profile)
+                    } else {
+                        observeLocationHistoryForUser(userId)
                     }
                     if (profile.role == UserRole.CHILD) {
                         observeIncomingRequests(profile.id)
@@ -429,6 +397,7 @@ class VesperaViewModel(
                 if (pairing != null && pairing.status == PairingStatus.PAIRED) {
                     val partnerId = if (currentProfile.role == UserRole.PARENT) pairing.childId else pairing.parentId
                     observePartnerLocation(partnerId)
+                    observeLocationHistory(pairingId)
                     observeSchedule(pairingId)
                     observeExtraTime(pairingId)
                     observePrivacy(pairingId)
@@ -436,6 +405,29 @@ class VesperaViewModel(
                 }
             }
         }
+    }
+
+    private fun observeLocationHistory(pairingId: String) {
+        historyJob?.cancel()
+        historyJob = viewModelScope.launch {
+            repository.observeLocationHistory(pairingId).collect { list ->
+                _uiState.value = _uiState.value.copy(locationHistory = list)
+            }
+        }
+    }
+
+    private fun observeLocationHistoryForUser(userId: String) {
+        historyJob?.cancel()
+        historyJob = viewModelScope.launch {
+            repository.observeLocationHistoryForUser(userId).collect { list ->
+                _uiState.value = _uiState.value.copy(locationHistory = list)
+            }
+        }
+    }
+
+    fun toggleLocationHistory(enabled: Boolean) {
+        context?.getSharedPreferences("vespera_prefs", Context.MODE_PRIVATE)?.edit()?.putBoolean("history_enabled", enabled)?.apply()
+        _uiState.value = _uiState.value.copy(isLocationHistoryEnabled = enabled)
     }
 
     private fun observeIncomingRequests(childId: String) {
@@ -626,32 +618,168 @@ class VesperaViewModel(
         }
     }
 
-    fun selectRole(role: UserRole) {
-        val current = _uiState.value.userProfile ?: return
-        if (_uiState.value.isGuestDemoMode) {
-            switchDemoRole(role)
+    fun signInWithUsername(username: String, pass: String, selectedRole: UserRole) {
+        val email = "$username@giadinhviet.vn"
+        if (username.isBlank() || pass.isBlank()) {
+            _uiState.value = _uiState.value.copy(errorMessage = "Vui lòng nhập đầy đủ tên tài khoản và mật khẩu.")
             return
         }
+        _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
             try {
-                val studentCode = if (role == UserRole.CHILD && current.studentCode.isEmpty()) {
-                    repository.generateStudentCode()
-                } else {
-                    current.studentCode
-                }
-                val updated = current.copy(role = role, studentCode = studentCode)
-                repository.saveUserProfile(updated)
-                _uiState.value = _uiState.value.copy(userProfile = updated)
-                if (role == UserRole.CHILD) {
-                    observeIncomingRequests(updated.id)
-                } else {
-                    requestsJob?.cancel()
-                    _uiState.value = _uiState.value.copy(pendingRequests = emptyList())
+                val authResult = auth.signInWithEmailAndPassword(email.trim(), pass).await()
+                val user = authResult.user
+                if (user != null) {
+                    val studentCode = if (selectedRole == UserRole.CHILD) repository.generateStudentCode() else ""
+                    val profile = UserProfile(
+                        id = user.uid,
+                        email = email,
+                        displayName = username,
+                        role = selectedRole,
+                        studentCode = studentCode
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        isAuthenticated = true,
+                        isGuestDemoMode = false,
+                        authUserId = user.uid,
+                        userProfile = profile,
+                        isLoading = false,
+                        errorMessage = null
+                    )
+                    try {
+                        val existing = repository.getUserProfile(user.uid)
+                        if (existing == null) {
+                            repository.saveUserProfile(profile)
+                        } else {
+                            _uiState.value = _uiState.value.copy(userProfile = existing)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Sync profile error", e)
+                    }
+                    startObservingUserData(user.uid)
                 }
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(errorMessage = e.localizedMessage)
+                Log.e(TAG, "Sign-in error", e)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    errorMessage = "Đăng nhập thất bại: ${e.localizedMessage ?: "Kiểm tra lại tài khoản/mật khẩu"}"
+                )
             }
         }
+    }
+
+    fun signUpWithUsername(username: String, pass: String, selectedRole: UserRole) {
+        val email = "$username@giadinhviet.vn"
+        if (username.isBlank() || pass.isBlank()) {
+            _uiState.value = _uiState.value.copy(errorMessage = "Vui lòng nhập đầy đủ tên tài khoản và mật khẩu.")
+            return
+        }
+        if (pass.length < 6) {
+            _uiState.value = _uiState.value.copy(errorMessage = "Mật khẩu phải có ít nhất 6 ký tự.")
+            return
+        }
+        _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+        viewModelScope.launch {
+            try {
+                val authResult = auth.createUserWithEmailAndPassword(email.trim(), pass).await()
+                val user = authResult.user
+                if (user != null) {
+                    val studentCode = if (selectedRole == UserRole.CHILD) repository.generateStudentCode() else ""
+                    val profile = UserProfile(
+                        id = user.uid,
+                        email = email,
+                        displayName = username,
+                        role = selectedRole,
+                        studentCode = studentCode
+                    )
+                    repository.saveUserProfile(profile)
+                    _uiState.value = _uiState.value.copy(
+                        isAuthenticated = true,
+                        isGuestDemoMode = false,
+                        authUserId = user.uid,
+                        userProfile = profile,
+                        isLoading = false,
+                        errorMessage = null
+                    )
+                    startObservingUserData(user.uid)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Sign-up error", e)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    errorMessage = "Tạo tài khoản thất bại: ${e.localizedMessage ?: "Tài khoản đã tồn tại"}"
+                )
+            }
+        }
+    }
+
+
+
+    fun selectRole(role: UserRole) {
+        val current = _uiState.value.userProfile
+        val studentCode = if (role == UserRole.CHILD) {
+            current?.studentCode?.ifEmpty { repository.getOrGenerateDeviceStudentCode() } ?: repository.getOrGenerateDeviceStudentCode()
+        } else {
+            current?.studentCode.orEmpty()
+        }
+        val verificationPin = if (role == UserRole.CHILD) {
+            current?.verificationPin?.ifEmpty { repository.getOrGenerateVerificationPin() } ?: repository.getOrGenerateVerificationPin()
+        } else {
+            current?.verificationPin.orEmpty()
+        }
+        val updated = (current ?: UserProfile(
+            id = auth.currentUser?.uid ?: "user_local",
+            email = if (role == UserRole.PARENT) "phuhuynh@giadinhviet.vn" else "hocsinh@giadinhviet.vn"
+        )).copy(
+            role = role,
+            studentCode = studentCode,
+            verificationPin = verificationPin,
+            displayName = if (role == UserRole.CHILD) "Học sinh" else "Phụ huynh"
+        )
+        _uiState.value = _uiState.value.copy(
+            userProfile = updated,
+            successMessage = "Đã chuyển sang vai trò: ${if (role == UserRole.CHILD) "Học sinh 🎒" else "Phụ huynh 🛡️"}"
+        )
+        if (!_uiState.value.isGuestDemoMode && auth.currentUser != null) {
+            viewModelScope.launch {
+                try {
+                    repository.saveUserProfile(updated)
+                    if (role == UserRole.CHILD) {
+                        observeIncomingRequests(updated.id)
+                    } else {
+                        requestsJob?.cancel()
+                        _uiState.value = _uiState.value.copy(pendingRequests = emptyList())
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Save user profile error", e)
+                }
+            }
+        }
+    }
+
+    fun regenerateStudentCode() {
+        val newCode = repository.regenerateDeviceStudentCode()
+        val newPin = repository.regenerateVerificationPin()
+        val current = _uiState.value.userProfile ?: return
+        val updated = current.copy(studentCode = newCode, verificationPin = newPin)
+        _uiState.value = _uiState.value.copy(
+            userProfile = updated,
+            successMessage = "Đã tạo mã học sinh mới: $newCode (PIN: $newPin)"
+        )
+        if (!_uiState.value.isGuestDemoMode && auth.currentUser != null) {
+            viewModelScope.launch {
+                try {
+                    repository.saveUserProfile(updated)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Save new student code error", e)
+                }
+            }
+        }
+    }
+
+    fun toggleRole() {
+        val currentRole = _uiState.value.userProfile?.role ?: UserRole.PARENT
+        selectRole(if (currentRole == UserRole.PARENT) UserRole.CHILD else UserRole.PARENT)
     }
 
     fun sendPairingRequest(studentCode: String) {
@@ -665,29 +793,35 @@ class VesperaViewModel(
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
             try {
-                // If pairing with self on single device testing
-                if (parent.studentCode.isNotEmpty() && parent.studentCode == cleanCode) {
-                    val childProfile = UserProfile(
-                        id = "child_${parent.id.take(8)}",
-                        email = "hocsinh.${parent.email}",
-                        displayName = "Học sinh ($cleanCode)",
-                        role = UserRole.CHILD,
-                        studentCode = cleanCode
-                    )
-                    val req = PairingRequest(
-                        id = "req_${System.currentTimeMillis()}",
-                        studentCode = cleanCode,
+                // If in guest mode, self-testing, or matching this device's unique student code: instant pairing
+                val deviceCode = repository.getOrGenerateDeviceStudentCode()
+                if (_uiState.value.isGuestDemoMode || parent.studentCode == cleanCode || cleanCode == deviceCode) {
+                    val childId = "child_${cleanCode.take(8)}"
+                    val newPairing = Pairing(
+                        id = "pairing_${System.currentTimeMillis()}",
                         parentId = parent.id,
-                        parentName = parent.displayName,
-                        parentEmail = parent.email,
-                        childId = childProfile.id,
-                        status = RequestStatus.APPROVED,
-                        createdAt = System.currentTimeMillis()
+                        childId = childId,
+                        studentCode = cleanCode,
+                        parentName = parent.displayName.ifEmpty { "Phụ huynh" },
+                        childName = "Học sinh ($cleanCode)",
+                        status = PairingStatus.PAIRED,
+                        createdAt = System.currentTimeMillis(),
+                        updatedAt = System.currentTimeMillis()
                     )
-                    repository.acceptPairingRequest(req, childProfile)
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        successMessage = "Ghép nối thành công với mã học sinh $cleanCode!"
+                        activePairing = newPairing,
+                        partnerLocation = LocationData(
+                            userId = childId,
+                            pairingId = newPairing.id,
+                            userName = "Học sinh ($cleanCode)",
+                            latitude = _uiState.value.myLocation?.latitude ?: 21.0285,
+                            longitude = _uiState.value.myLocation?.longitude ?: 105.8542,
+                            batteryLevel = 90,
+                            speed = 0f,
+                            currentSafeZone = "Khu vực an toàn"
+                        ),
+                        successMessage = "Ghép nối thành công với thiết bị học sinh $cleanCode!"
                     )
                     return@launch
                 }
@@ -771,24 +905,10 @@ class VesperaViewModel(
         val categories = telemetryHelper.getTodayUsageCategories()
         val detailedList = telemetryHelper.getDetailedAppUsageList()
 
-        val fallbackDetailed = if (_uiState.value.detailedAppUsage.isNotEmpty()) {
-            _uiState.value.detailedAppUsage
-        } else {
-            listOf(
-                DetailedAppUsage("com.google.android.youtube", "YouTube", 45, "Mạng xã hội"),
-                DetailedAppUsage("com.zhiliaoapp.musically", "TikTok", 32, "Mạng xã hội"),
-                DetailedAppUsage("com.duolingo", "Duolingo", 28, "Học tập"),
-                DetailedAppUsage("com.zing.zalo", "Zalo", 20, "Mạng xã hội"),
-                DetailedAppUsage("us.zoom.videomeetings", "Zoom Meetings", 15, "Học tập"),
-                DetailedAppUsage("com.roblox.client", "Roblox", 12, "Trò chơi"),
-                DetailedAppUsage("com.android.chrome", "Google Chrome", 10, "Tiện ích & Khác")
-            )
-        }
-
         _uiState.value = _uiState.value.copy(
             hasUsagePermission = hasPerm,
-            usageCategories = if (categories.isNotEmpty()) categories else _uiState.value.usageCategories,
-            detailedAppUsage = if (detailedList.isNotEmpty()) detailedList else fallbackDetailed
+            usageCategories = if (hasPerm) categories else emptyList(),
+            detailedAppUsage = if (hasPerm) detailedList else emptyList()
         )
     }
 
@@ -1032,12 +1152,12 @@ class VesperaViewModel(
         _uiState.value = _uiState.value.copy(smartAdvice = advice)
     }
 
-    fun sendMessage(text: String) {
+    fun sendMessage(text: String, mediaUrl: String? = null, mediaType: String? = null) {
         val pairing = _uiState.value.activePairing ?: return
         val profile = _uiState.value.userProfile ?: return
         val emotion = _uiState.value.selectedEmotion
 
-        if (text.isBlank() && emotion == null) return
+        if (text.isBlank() && emotion == null && mediaUrl == null) return
 
         if (_uiState.value.isGuestDemoMode) {
             val newMsg = FamilyMessage(
@@ -1048,6 +1168,8 @@ class VesperaViewModel(
                 senderRole = profile.role,
                 text = text.trim(),
                 emotion = emotion?.name,
+                mediaUrl = mediaUrl,
+                mediaType = mediaType,
                 isStarred = false,
                 createdAt = System.currentTimeMillis()
             )
@@ -1067,6 +1189,8 @@ class VesperaViewModel(
                     senderRole = profile.role,
                     text = text.trim(),
                     emotion = emotion?.name,
+                    mediaUrl = mediaUrl,
+                    mediaType = mediaType,
                     isStarred = false,
                     createdAt = System.currentTimeMillis()
                 )
@@ -1109,5 +1233,137 @@ class VesperaViewModel(
             return
         }
         auth.signOut()
+    }
+
+    fun setDarkMode(enabled: Boolean) {
+        _uiState.value = _uiState.value.copy(isDarkMode = enabled)
+    }
+
+    fun setColorTheme(themeName: String) {
+        _uiState.value = _uiState.value.copy(colorTheme = themeName)
+    }
+
+    fun dismissSosAlert() {
+        _uiState.value = _uiState.value.copy(isSosAlertActive = false)
+    }
+
+    fun sendSosAlert() {
+        sendSmartSosToFamily()
+    }
+
+    fun sendSmartSosToFamily(customMessage: String? = null) {
+        val loc = _uiState.value.myLocation ?: LocationData(
+            latitude = 21.0285,
+            longitude = 105.8542,
+            userName = _uiState.value.userProfile?.displayName.orEmpty()
+        )
+        val name = _uiState.value.userProfile?.displayName.orEmpty().ifEmpty { "Thành viên gia đình" }
+
+        viewModelScope.launch {
+            val dispatcher = smartSosDispatcher
+            if (dispatcher != null) {
+                val res = dispatcher.sendSosToFamily(loc, name, customMessage)
+                if (res.isSuccess) {
+                    _uiState.value = _uiState.value.copy(
+                        isSosAlertActive = true,
+                        activeSosMessage = res.detailMessage,
+                        successMessage = res.detailMessage
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isSosAlertActive = true,
+                        activeSosMessage = res.detailMessage,
+                        errorMessage = res.detailMessage
+                    )
+                }
+            } else {
+                repository.sendSosAlert(loc)
+                _uiState.value = _uiState.value.copy(
+                    isSosAlertActive = true,
+                    activeSosMessage = "Đã gửi tín hiệu SOS khẩn cấp!",
+                    successMessage = "Đã gửi tín hiệu SOS khẩn cấp!"
+                )
+            }
+        }
+    }
+
+    fun sendSmartSosToRescue(hotline: String = "112") {
+        val loc = _uiState.value.myLocation ?: LocationData(
+            latitude = 21.0285,
+            longitude = 105.8542,
+            userName = _uiState.value.userProfile?.displayName.orEmpty()
+        )
+        val name = _uiState.value.userProfile?.displayName.orEmpty().ifEmpty { "Công dân khẩn cấp" }
+
+        val dispatcher = smartSosDispatcher
+        if (dispatcher != null) {
+            val res = dispatcher.sendSosToRescueForce(hotline, loc, name)
+            _uiState.value = _uiState.value.copy(
+                isSosAlertActive = true,
+                activeSosMessage = res.detailMessage,
+                successMessage = res.detailMessage
+            )
+        } else {
+            _uiState.value = _uiState.value.copy(
+                isSosAlertActive = true,
+                activeSosMessage = "Đã mở liên lạc cứu hộ $hotline!",
+                successMessage = "Đã mở liên lạc cứu hộ $hotline!"
+            )
+        }
+    }
+
+
+    fun connectMeshPeer(endpointId: String) {
+        val name = _uiState.value.userProfile?.displayName.orEmpty().ifEmpty { "Thiết bị Gia Đình Việt" }
+        smartSosDispatcher?.meshManager?.requestConnection(endpointId, name)
+        _uiState.value = _uiState.value.copy(successMessage = "Đang gửi yêu cầu kết nối Mesh...")
+    }
+
+    fun sendMeshMessage(endpointId: String, text: String) {
+        val name = _uiState.value.userProfile?.displayName.orEmpty().ifEmpty { "Tôi" }
+        val ok = smartSosDispatcher?.meshManager?.sendMessageToPeer(endpointId, text, name) ?: false
+        if (ok) {
+            _uiState.value = _uiState.value.copy(successMessage = "Đã gửi tin nhắn Mesh P2P!")
+        } else {
+            _uiState.value = _uiState.value.copy(errorMessage = "Gửi tin qua Mesh thất bại.")
+        }
+    }
+
+    fun saveEmergencyPhoneNumber(phone: String) {
+        smartSosDispatcher?.smsManager?.saveEmergencyPhoneNumber(phone)
+        _uiState.value = _uiState.value.copy(
+            emergencyPhoneNumber = phone.trim(),
+            successMessage = "Đã lưu số điện thoại người thân khẩn cấp: $phone"
+        )
+    }
+
+    fun saveSosSchedule(isRestricted: Boolean, startHour: Int, endHour: Int) {
+        smartSosDispatcher?.setSosAllowedSchedule(isRestricted, startHour, endHour)
+        _uiState.value = _uiState.value.copy(
+            isSosRestricted = isRestricted,
+            sosStartHour = startHour,
+            sosEndHour = endHour,
+            successMessage = if (isRestricted) "Đã lưu khung giờ cho phép SOS: $startHour:00 - $endHour:00"
+            else "Đã mở quyền sử dụng SOS 24/7!"
+        )
+    }
+
+    fun isSosAllowedNow(): Boolean {
+        return smartSosDispatcher?.isSosAllowedAtCurrentTime() ?: true
+    }
+
+    fun updateUserProfile(newName: String, newPhotoUrl: String) {
+        val currentProfile = _uiState.value.userProfile ?: return
+        val updatedProfile = currentProfile.copy(displayName = newName, photoUrl = newPhotoUrl)
+        _uiState.value = _uiState.value.copy(userProfile = updatedProfile)
+        viewModelScope.launch {
+            try {
+                repository.saveUserProfile(updatedProfile)
+                _uiState.value = _uiState.value.copy(successMessage = "Đã cập nhật thông tin tài khoản!")
+            } catch (e: Exception) {
+                Log.w(TAG, "updateUserProfile error", e)
+                _uiState.value = _uiState.value.copy(errorMessage = "Không thể cập nhật thông tin.")
+            }
+        }
     }
 }

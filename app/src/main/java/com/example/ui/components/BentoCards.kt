@@ -55,8 +55,8 @@ import com.example.ui.theme.TextSecondary
 @Composable
 fun BentoCard(
     modifier: Modifier = Modifier,
-    backgroundColor: Color = SpaceCardSurface,
-    borderColor: Color = SpaceCardBorder,
+    backgroundColor: Color = MaterialTheme.colorScheme.surfaceVariant,
+    borderColor: Color = MaterialTheme.colorScheme.outline,
     onClick: (() -> Unit)? = null,
     testTag: String = "bento_card",
     content: @Composable () -> Unit

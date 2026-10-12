@@ -1,5 +1,9 @@
 package com.example.ui.screens
 
+import com.example.service.TelemetryAndUsageHelper
+import com.example.service.sos.PermissionHandler
+
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,7 +29,9 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.AlertDialog
@@ -33,6 +39,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -67,15 +75,27 @@ import com.example.ui.viewmodel.VesperaUiState
 @Composable
 fun SettingsScreen(
     uiState: VesperaUiState,
-    onRoleSelected: (UserRole) -> Unit,
     onOpenUsageSettings: () -> Unit,
     onUnpair: () -> Unit,
     onSignOut: () -> Unit,
-    onToggleIosPreview: () -> Unit = {}
+    onToggleDarkMode: (Boolean) -> Unit,
+    onColorThemeSelected: (String) -> Unit,
+    onToggleIosPreview: () -> Unit = {},
+    onSaveEmergencyPhone: (String) -> Unit = { _ -> },
+    onSaveSosSchedule: (Boolean, Int, Int) -> Unit = { _, _, _ -> },
+    onUpdateProfile: (String, String) -> Unit = { _, _ -> }
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val scrollState = rememberScrollState()
     var showUnpairDialog by remember { mutableStateOf(false) }
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
+    var showEditProfileDialog by remember { mutableStateOf(false) }
+    var newDisplayName by remember(uiState.userProfile?.displayName) { mutableStateOf(uiState.userProfile?.displayName ?: "") }
+
+    var emergencyPhoneInput by remember(uiState.emergencyPhoneNumber) { mutableStateOf(uiState.emergencyPhoneNumber) }
+    var isSosRestricted by remember(uiState.isSosRestricted) { mutableStateOf(uiState.isSosRestricted) }
+    var sosStartHour by remember(uiState.sosStartHour) { mutableStateOf(uiState.sosStartHour.toString()) }
+    var sosEndHour by remember(uiState.sosEndHour) { mutableStateOf(uiState.sosEndHour.toString()) }
 
     val userProfile = uiState.userProfile
     val isPaired = uiState.activePairing != null && uiState.activePairing.status == PairingStatus.PAIRED
@@ -83,23 +103,154 @@ fun SettingsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(SpaceDarkBackground)
+            .background(MaterialTheme.colorScheme.background)
             .verticalScroll(scrollState)
             .padding(horizontal = 16.dp, vertical = 20.dp)
     ) {
         Text(
-            text = "CÀI ĐẶT & KẾT NỐI",
+            text = "CÀI ĐẶT & GIAO DIỆN",
             style = MaterialTheme.typography.displayMedium,
-            color = TextPrimary,
+            color = MaterialTheme.colorScheme.onBackground,
             fontWeight = FontWeight.Bold
         )
         Text(
-            text = "Quản lý liên kết gia đình & Quyền riêng tư",
+            text = "Tùy chỉnh giao diện sáng tối, màu sắc & liên kết gia đình",
             style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Spacer(modifier = Modifier.height(20.dp))
+
+        val telemetryHelper = TelemetryAndUsageHelper(context)
+        val missingPerms = PermissionHandler.getMissingPermissions(context)
+        val hasUsage = telemetryHelper.hasUsageStatsPermission()
+        val allPermissionsGranted = missingPerms.isEmpty() && hasUsage
+
+
+        val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+        ) { results ->
+            val denied = results.filterValues { !it }.keys.toList()
+            if (denied.isEmpty()) {
+                android.widget.Toast.makeText(context, "Đã cấp tất cả quyền hệ thống thành công!", android.widget.Toast.LENGTH_SHORT).show()
+            } else {
+                android.widget.Toast.makeText(context, "Còn ${denied.size} quyền chưa được cấp.", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        BentoCard(modifier = Modifier.fillMaxWidth()) {
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "TRẠNG THÁI QUYỀN HỆ THỐNG",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = if (allPermissionsGranted) NeonEmerald else NeonAmber,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (allPermissionsGranted) "Tất cả quyền quan trọng đã sẵn sàng" else "Có quyền hệ thống đang thiếu",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary
+                        )
+                    }
+                    Icon(
+                        imageVector = if (allPermissionsGranted) Icons.Default.Verified else Icons.Default.Security,
+                        contentDescription = null,
+                        tint = if (allPermissionsGranted) NeonEmerald else NeonAmber,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                val locationOk = com.example.service.sos.PermissionHandler.hasPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION)
+                val smsOk = com.example.service.sos.PermissionHandler.hasPermission(context, android.Manifest.permission.SEND_SMS)
+                val notifOk = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU || com.example.service.sos.PermissionHandler.hasPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
+
+                PermissionStatusRow("Quyền Vị trí GPS (Theo dõi an toàn)", locationOk)
+                PermissionStatusRow("Quyền Gửi tin nhắn SMS Cứu nạn", smsOk)
+                PermissionStatusRow("Quyền Thông báo đẩy (Alerts)", notifOk)
+                PermissionStatusRow("Quyền Truy cập dữ liệu sử dụng", hasUsage)
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (!allPermissionsGranted) {
+                        Button(
+                            onClick = {
+                                val missing = com.example.service.sos.PermissionHandler.getMissingPermissions(context)
+                                if (missing.isNotEmpty()) {
+                                    permissionLauncher.launch(missing)
+                                } else if (!hasUsage) {
+                                    onOpenUsageSettings()
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("grant_permissions_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonViolet)
+                        ) {
+                            Text("Ấn 1 nút cấp ngay quyền thiếu", fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                android.widget.Toast.makeText(context, "Hệ thống đã được cấp đầy đủ quyền!", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonEmerald),
+                            enabled = false
+                        ) {
+                            Text("Đã cấp đầy đủ quyền hệ thống", fontWeight = FontWeight.Bold, color = Color.Black)
+                        }
+                    }
+
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Theme & Color Customization Card
+        BentoCard(modifier = Modifier.fillMaxWidth()) {
+            Column {
+                Text(
+                    text = "GIAO DIỆN SÁNG / TỐI",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (uiState.isDarkMode) "Chế độ tối (Dark Mode)" else "Chế độ sáng (Light Mode)",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = uiState.isDarkMode,
+                        onCheckedChange = onToggleDarkMode
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         // Profile & Role Card
         BentoCard(modifier = Modifier.fillMaxWidth()) {
@@ -120,7 +271,7 @@ fun SettingsScreen(
                         )
                     }
                     Spacer(modifier = Modifier.width(14.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = userProfile?.displayName ?: "Người dùng Google",
                             style = MaterialTheme.typography.titleLarge,
@@ -133,59 +284,13 @@ fun SettingsScreen(
                             color = TextMuted
                         )
                     }
+                    TextButton(onClick = { showEditProfileDialog = true }) {
+                        Text("Sửa")
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Role Selector if not paired
-                Text(
-                    text = "VAI TRÒ HIỆN TẠI:",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NeonCyan,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (userProfile?.role == UserRole.PARENT) NeonViolet.copy(alpha = 0.25f) else SpaceCardElevated)
-                            .border(1.dp, if (userProfile?.role == UserRole.PARENT) NeonViolet else SpaceCardBorder, RoundedCornerShape(12.dp))
-                            .clickable(enabled = !isPaired) { onRoleSelected(UserRole.PARENT) }
-                            .padding(vertical = 10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Phụ huynh",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (userProfile?.role == UserRole.PARENT) TextPrimary else TextMuted,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (userProfile?.role == UserRole.CHILD) NeonCyan.copy(alpha = 0.25f) else SpaceCardElevated)
-                            .border(1.dp, if (userProfile?.role == UserRole.CHILD) NeonCyan else SpaceCardBorder, RoundedCornerShape(12.dp))
-                            .clickable(enabled = !isPaired) { onRoleSelected(UserRole.CHILD) }
-                            .padding(vertical = 10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Học sinh",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (userProfile?.role == UserRole.CHILD) TextPrimary else TextMuted,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
 
                 if (userProfile?.role == UserRole.CHILD && userProfile.studentCode.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(12.dp))
@@ -198,6 +303,37 @@ fun SettingsScreen(
                 }
             }
         }
+    // Edit Profile Dialog
+    if (showEditProfileDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditProfileDialog = false },
+            title = { Text("Đổi tên tài khoản") },
+            text = {
+                OutlinedTextField(
+                    value = newDisplayName,
+                    onValueChange = { newDisplayName = it },
+                    label = { Text("Tên hiển thị mới") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showEditProfileDialog = false
+                        onUpdateProfile(newDisplayName, userProfile?.photoUrl ?: "")
+                    }
+                ) {
+                    Text("Lưu", color = NeonCyan, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditProfileDialog = false }) {
+                    Text("Hủy", color = TextSecondary)
+                }
+            },
+            containerColor = SpaceDarkBackground
+        )
+    }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -216,17 +352,19 @@ fun SettingsScreen(
 
                 if (isPaired) {
                     val p = uiState.activePairing!!
+                    val isParent = userProfile?.role == UserRole.PARENT
+                    val partnerTitle = if (isParent) "Đang kết nối với Học sinh: ${p.childName}" else "Đang kết nối với Phụ huynh: ${p.parentName}"
                     Text(
-                        text = "Đang kết nối: ${p.parentName} ⟷ ${p.childName}",
+                        text = partnerTitle,
                         style = MaterialTheme.typography.titleMedium,
                         color = TextPrimary,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Mã kết nối: ${p.studentCode} • Dữ liệu mã hóa trên Firestore",
+                        text = "Mã kết nối học sinh: ${p.studentCode} • Trạng thái: Đã liên kết an toàn",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary
+                        color = NeonEmerald
                     )
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -256,6 +394,76 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // CẤU HÌNH CỨU HỘ KHẨN CẤP & CÀI ĐẶT NÚT SOS
+        BentoCard(modifier = Modifier.fillMaxWidth()) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Security,
+                        contentDescription = null,
+                        tint = NeonRose,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "CỨU HỘ KHẨN CẤP & CÀI ĐẶT NÚT SOS",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = NeonRose,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Số điện thoại nhận tin SMS khẩn cấp:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Được dùng để gửi SMS kèm link Google Maps khi mất Internet & ngoài bán kính Mesh 50m.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = emergencyPhoneInput,
+                        onValueChange = { emergencyPhoneInput = it },
+                        placeholder = { Text("Ví dụ: 0912345678", color = TextMuted) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = { onSaveEmergencyPhone(emergencyPhoneInput) },
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonRose)
+                    ) {
+                        Text("Lưu", color = Color.White)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Thông tin SOS (Luôn hoạt động 24/7)
+                Text(
+                    text = "Nút SOS luôn hoạt động 24/7 để đảm bảo an toàn tuyệt đối.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = NeonEmerald,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         // System Permissions Card
         BentoCard(modifier = Modifier.fillMaxWidth()) {
             Column {
@@ -270,25 +478,38 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                            val uri = android.net.Uri.fromParts("package", context.packageName, null)
+                            intent.data = uri
+                            context.startActivity(intent)
+                        }
+                        .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Usage Access (Dữ liệu sử dụng)",
+                            text = "Quyền ứng dụng & Vị trí hệ thống",
                             style = MaterialTheme.typography.titleMedium,
                             color = TextPrimary
                         )
                         Text(
-                            text = if (uiState.hasUsagePermission) "Đã cấp quyền chuẩn" else "Chưa được cấp quyền",
+                            text = "Nhấn để quản lý và cấp phép quyền vị trí & thông báo.",
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (uiState.hasUsagePermission) NeonEmerald else NeonAmber
+                            color = NeonAmber
                         )
                     }
 
                     Button(
-                        onClick = onOpenUsageSettings,
+                        onClick = {
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                            val uri = android.net.Uri.fromParts("package", context.packageName, null)
+                            intent.data = uri
+                            context.startActivity(intent)
+                        },
                         shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = SpaceCardElevated,
@@ -350,49 +571,6 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // iOS & Multiplatform Architecture Card
-        BentoCard(modifier = Modifier.fillMaxWidth()) {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "🍏", fontSize = 18.sp)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "KIẾN TRÚC ĐA NỀN TẢNG (IOS & ANDROID)",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = NeonCyan,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Gia Đình Việt thiết kế theo chuẩn Clean Architecture bảo mật cao, hỗ trợ đồng bộ thời gian thực đa nền tảng.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Button(
-                    onClick = onToggleIosPreview,
-                    modifier = Modifier.fillMaxWidth().testTag("toggle_ios_preview_btn"),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (uiState.isIosPreviewMode) NeonEmerald else SpaceCardElevated,
-                        contentColor = if (uiState.isIosPreviewMode) Color.Black else NeonCyan
-                    )
-                ) {
-                    Text(
-                        text = if (uiState.isIosPreviewMode) "Đang bật Giao diện iOS (Tắt ✕)" else "Bật Chế độ xem trước Giao diện iOS 🍏",
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
 
         Spacer(modifier = Modifier.height(32.dp))
     }
@@ -455,3 +633,27 @@ fun SettingsScreen(
         )
     }
 }
+
+@Composable
+fun PermissionStatusRow(title: String, isGranted: Boolean) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextPrimary
+        )
+        Text(
+            text = if (isGranted) "✓ Đã cấp" else "✗ Chưa cấp",
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (isGranted) NeonEmerald else NeonRose,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+

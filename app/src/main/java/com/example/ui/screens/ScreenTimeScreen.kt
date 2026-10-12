@@ -79,7 +79,7 @@ fun ScreenTimeScreen(
     val isChild = uiState.userProfile?.role == UserRole.CHILD
     val sched = uiState.usageSchedule
     val target = sched?.dailyTargetMinutes ?: 120
-    val used = sched?.usedMinutes ?: 45
+    val used = sched?.usedMinutes ?: 0
     val remaining = (target - used).coerceAtLeast(0)
 
     Column(
@@ -526,47 +526,6 @@ fun ScreenTimeScreen(
                         }
                     }
                 }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Schedule & Android Safe Policy Info Card
-        BentoCard(modifier = Modifier.fillMaxWidth()) {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.LockClock,
-                        contentDescription = null,
-                        tint = NeonViolet,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "CHẾ ĐỘ NHẮC NHỞ & MINH BẠCH",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = NeonViolet,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Vespera tuân thủ chính sách Android an toàn: Ứng dụng hoạt động theo cơ chế thông báo nhắc nhở và cảnh báo thống nhất giữa gia đình, không can thiệp khóa cưỡng chế hay lạm dụng Accessibility Service.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    text = "• Giờ bắt đầu cho phép: ${sched?.allowedStartHour ?: 7}:00 sáng\n• Giờ kết thúc: ${sched?.allowedEndHour ?: 21}:30 tối\n• Ngày áp dụng: ${sched?.daysOfWeek ?: "Cả tuần"}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextMuted,
-                    lineHeight = 22.sp
-                )
             }
         }
 

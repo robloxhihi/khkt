@@ -60,6 +60,8 @@ import com.example.data.model.PairingRequest
 import com.example.data.model.PairingStatus
 import com.example.data.model.UserRole
 import com.example.ui.components.BentoCard
+import com.example.ui.components.BentoProgressBar
+import com.example.ui.components.BentoStatCard
 import com.example.ui.theme.NeonAmber
 import com.example.ui.theme.NeonCyan
 import com.example.ui.theme.NeonEmerald
@@ -87,12 +89,13 @@ fun StudentMainScreen(
     onOpenChat: () -> Unit,
     onRequestExtraTime: () -> Unit,
     onSignOut: () -> Unit,
-    onSwitchToParentRole: () -> Unit
+    onRegenerateCode: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
-    val studentCode = uiState.userProfile?.studentCode?.ifEmpty { "HS-CONNECT" } ?: "HS-CONNECT"
+    val userProfile = uiState.userProfile
+    val studentCode = userProfile?.studentCode?.ifEmpty { "HS-CONNECT" } ?: "HS-CONNECT"
     val isPaired = uiState.activePairing != null && uiState.activePairing.status == PairingStatus.PAIRED
     val parentName = uiState.activePairing?.parentName?.ifEmpty { "Phụ huynh" } ?: "Phụ huynh"
     val myLoc = uiState.myLocation
@@ -102,9 +105,15 @@ fun StudentMainScreen(
             .fillMaxSize()
             .background(SpaceDarkBackground)
             .verticalScroll(scrollState)
-            .padding(horizontal = 20.dp, vertical = 24.dp)
+            .padding(horizontal = 16.dp, vertical = 20.dp)
     ) {
-        // Top Header
+        // Profile Header
+        if (uiState.partnerLocation?.isSos == true) {
+            com.example.ui.components.SosAlertBanner(
+                message = "CẢNH BÁO SOS: ${uiState.partnerLocation?.userName} đang gặp nguy hiểm!"
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -113,330 +122,104 @@ fun StudentMainScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(42.dp)
+                        .size(44.dp)
                         .clip(CircleShape)
                         .background(Brush.linearGradient(listOf(NeonCyan, Color(0xFF1877F2)))),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(text = "🎒", fontSize = 20.sp)
+                    Text(text = "H", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 }
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
-                        text = "GIA ĐÌNH VIỆT",
+                        text = userProfile?.displayName?.ifEmpty { "Học sinh" } ?: "Học sinh",
                         style = MaterialTheme.typography.titleMedium,
                         color = TextPrimary,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Thiết bị học sinh",
+                        text = "Học sinh • $studentCode",
                         style = MaterialTheme.typography.labelSmall,
                         color = NeonCyan
                     )
                 }
             }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Role Switch button (for easy testing)
-                Button(
-                    onClick = onSwitchToParentRole,
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = SpaceCardElevated,
-                        contentColor = NeonViolet
-                    ),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    modifier = Modifier.height(32.dp)
-                ) {
-                    Text("Đổi vai trò", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                IconButton(
-                    onClick = onSignOut,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ExitToApp,
-                        contentDescription = "Đăng xuất",
-                        tint = TextMuted,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+            IconButton(onClick = onSignOut) {
+                Icon(imageVector = Icons.Default.ExitToApp, contentDescription = "Đăng xuất", tint = TextMuted)
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // HERO CARD: UNIQUE STUDENT CODE (MÃ ĐỘC NHẤT)
-        BentoCard(
-            modifier = Modifier.fillMaxWidth(),
-            borderColor = NeonCyan.copy(alpha = 0.7f),
-            testTag = "student_unique_code_card"
+        // Connection Badge
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (isPaired) NeonEmerald.copy(alpha = 0.15f) else NeonAmber.copy(alpha = 0.15f))
+                .border(1.dp, if (isPaired) NeonEmerald else NeonAmber, RoundedCornerShape(10.dp))
+                .padding(horizontal = 8.dp, vertical = 5.dp)
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(46.dp)
-                        .clip(CircleShape)
-                        .background(NeonCyan.copy(alpha = 0.15f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.QrCode,
-                        contentDescription = null,
-                        tint = NeonCyan,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text(
-                    text = "MÃ HỌC SINH ĐỘC NHẤT",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NeonCyan,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.2.sp
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (isPaired) Icons.Default.Link else Icons.Default.LinkOff,
+                    contentDescription = null,
+                    tint = if (isPaired) NeonEmerald else NeonAmber,
+                    modifier = Modifier.size(13.dp)
                 )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = if (isPaired) "Đã kết nối với $parentName" else "Chưa ghép nối",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isPaired) NeonEmerald else NeonAmber,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
 
-                Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-                // The large bold code
+        // Student Code Card
+        BentoCard(modifier = Modifier.fillMaxWidth()) {
+            Column {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("MÃ KẾT NỐI HỌC SINH", style = MaterialTheme.typography.labelMedium, color = NeonCyan, fontWeight = FontWeight.Bold)
+                    Button(
+                        onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                            val clip = ClipData.newPlainText("Mã học sinh", studentCode)
+                            clipboard?.setPrimaryClip(clip)
+                            Toast.makeText(context, "Đã sao chép: $studentCode", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = SpaceCardElevated, contentColor = NeonCyan)
+                    ) {
+                        Text("Sao chép", fontSize = 12.sp)
+                    }
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(12.dp))
                         .background(SpaceCardElevated)
-                        .border(1.5.dp, NeonCyan, RoundedCornerShape(16.dp))
-                        .padding(vertical = 18.dp),
+                        .border(1.dp, NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .padding(vertical = 14.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = studentCode,
-                        style = MaterialTheme.typography.headlineLarge,
-                        color = Color.White,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 4.sp
-                    )
+                    Text(text = studentCode, style = MaterialTheme.typography.headlineMedium, color = TextPrimary, fontWeight = FontWeight.Bold, letterSpacing = 3.sp)
                 }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Copy button
-                Button(
-                    onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                        val clip = ClipData.newPlainText("Mã học sinh", studentCode)
-                        clipboard?.setPrimaryClip(clip)
-                        Toast.makeText(context, "Đã sao chép mã: $studentCode", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("copy_student_code_btn"),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = NeonCyan,
-                        contentColor = Color.Black
-                    )
-                ) {
-                    Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Sao chép mã học sinh", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text(
-                    text = "Mở ứng dụng trên máy phụ huynh và nhập mã này để kết nối.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary,
-                    textAlign = TextAlign.Center
-                )
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // CONNECTION STATUS CARD
-        BentoCard(
-            modifier = Modifier.fillMaxWidth(),
-            borderColor = if (isPaired) NeonEmerald.copy(alpha = 0.5f) else NeonAmber.copy(alpha = 0.5f)
-        ) {
-            Column {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = if (isPaired) Icons.Default.Link else Icons.Default.LinkOff,
-                            contentDescription = null,
-                            tint = if (isPaired) NeonEmerald else NeonAmber,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "TRẠNG THÁI KẾT NỐI",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isPaired) NeonEmerald else NeonAmber,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isPaired) NeonEmerald.copy(alpha = 0.2f) else NeonAmber.copy(alpha = 0.2f))
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                    ) {
-                        Text(
-                            text = if (isPaired) "ĐÃ KẾT NỐI ⚡" else "ĐANG ĐỢI ⏳",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isPaired) NeonEmerald else NeonAmber,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                if (isPaired) {
-                    Text(
-                        text = "Đã liên kết với phụ huynh: $parentName",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Vị trí GPS và thời gian sử dụng được đồng bộ an toàn bảo vệ bạn.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
-                    )
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = onSendZenlyBump,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = SpaceCardElevated,
-                                contentColor = NeonAmber
-                            )
-                        ) {
-                            Text("⚡ Bump (${uiState.lastBumpCount})", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        Button(
-                            onClick = onOpenChat,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = SpaceCardElevated,
-                                contentColor = NeonCyan
-                            )
-                        ) {
-                            Text("💬 Nhắn tin", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        Button(
-                            onClick = onRequestExtraTime,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = NeonViolet,
-                                contentColor = Color.White
-                            )
-                        ) {
-                            Text("⏰ Xin giờ", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                } else {
-                    Text(
-                        text = "Chưa kết nối với thiết bị phụ huynh",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Khi phụ huynh nhập mã học sinh phía trên, yêu cầu sẽ xuất hiện tại đây.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
-                    )
-
-                    // Incoming requests from parent
-                    if (uiState.pendingRequests.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Text(
-                            text = "YÊU CẦU GHÉP NỐI MỚI:",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = NeonAmber,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        uiState.pendingRequests.forEach { req ->
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(SpaceCardElevated)
-                                    .border(1.dp, NeonAmber, RoundedCornerShape(12.dp))
-                                    .padding(12.dp)
-                            ) {
-                                Column {
-                                    Text(
-                                        text = "Phụ huynh: ${req.parentName}",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = TextPrimary,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = req.parentEmail,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = TextSecondary
-                                    )
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Button(
-                                            onClick = { onRejectPairing(req.id) },
-                                            modifier = Modifier.weight(1f),
-                                            shape = RoundedCornerShape(8.dp),
-                                            colors = ButtonDefaults.buttonColors(
-                                                containerColor = SpaceCardElevated,
-                                                contentColor = NeonRose
-                                            )
-                                        ) {
-                                            Text("Từ chối")
-                                        }
-                                        Button(
-                                            onClick = { onAcceptPairing(req) },
-                                            modifier = Modifier.weight(1f),
-                                            shape = RoundedCornerShape(8.dp),
-                                            colors = ButtonDefaults.buttonColors(
-                                                containerColor = NeonEmerald,
-                                                contentColor = Color.Black
-                                            )
-                                        ) {
-                                            Text("Đồng ý", fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            }
+        // Pending requests
+        if (uiState.pendingRequests.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(14.dp))
+            Text("YÊU CẦU GHÉP NỐI", style = MaterialTheme.typography.labelSmall, color = NeonAmber, fontWeight = FontWeight.Bold)
+            uiState.pendingRequests.forEach { req ->
+                BentoCard(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), borderColor = NeonAmber) {
+                    Column {
+                        Text("Phụ huynh: ${req.parentName}", style = MaterialTheme.typography.titleSmall, color = TextPrimary)
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { onRejectPairing(req.id) }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = SpaceCardElevated, contentColor = NeonRose)) { Text("Từ chối") }
+                            Button(onClick = { onAcceptPairing(req) }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = NeonEmerald, contentColor = Color.Black)) { Text("Đồng ý") }
                         }
                     }
                 }
@@ -444,91 +227,73 @@ fun StudentMainScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-
-        // REAL BACKGROUND SERVICES STATUS
-        BentoCard(modifier = Modifier.fillMaxWidth()) {
-            Column {
-                Text(
-                    text = "DỊCH VỤ CHẠY NGẦM BẢO VỆ",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = NeonCyan,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.GpsFixed,
-                            contentDescription = null,
-                            tint = NeonEmerald,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Định vị GPS thực tế", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+        
+        if (isPaired) {
+            val partnerLoc = uiState.partnerLocation
+            val parentName = uiState.activePairing?.parentName?.ifEmpty { "Phụ huynh" } ?: "Phụ huynh"
+            
+            // Paired: Parent Info Card
+            BentoCard(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    Text("PHỤ HUYNH KẾT NỐI", style = MaterialTheme.typography.labelSmall, color = NeonViolet, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(parentName, style = MaterialTheme.typography.titleMedium, color = TextPrimary, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onOpenChat, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = NeonCyan, contentColor = Color.Black)) { Text("💬 Nhắn tin") }
+                        Button(onClick = onSendZenlyBump, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = SpaceCardElevated, contentColor = NeonAmber)) { Text("⚡ Bump") }
                     }
-                    Text(
-                        text = if (myLoc != null) "Đang hoạt động (±${myLoc.accuracy.toInt()}m)" else "Đang khởi động",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = NeonEmerald,
-                        fontWeight = FontWeight.Bold
-                    )
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.BatteryChargingFull,
-                            contentDescription = null,
-                            tint = NeonCyan,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Pin thiết bị", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+            }
+            
+            Spacer(modifier = Modifier.height(14.dp))
+            
+            // Paired: Usage Card
+            val sched = uiState.usageSchedule
+            val target = sched?.dailyTargetMinutes ?: 120
+            val used = sched?.usedMinutes ?: 0
+            val remaining = (target - used).coerceAtLeast(0)
+            
+            BentoCard(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    Text("THỜI GIAN SỬ DỤNG", style = MaterialTheme.typography.labelSmall, color = NeonEmerald, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    BentoProgressBar(usedMinutes = used, targetMinutes = target)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Còn lại: $remaining ph", color = TextPrimary, fontWeight = FontWeight.Bold)
+                        Text("Mục tiêu: $target ph", color = TextMuted)
                     }
-                    Text(
-                        text = "${myLoc?.batteryLevel ?: 85}%",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = onRequestExtraTime, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = SpaceCardElevated, contentColor = NeonEmerald)) {
+                        Text("➕ Xin thêm thời gian")
+                    }
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.HourglassTop,
-                            contentDescription = null,
-                            tint = NeonViolet,
-                            modifier = Modifier.size(18.dp)
+            }
+        } else {
+            // Device Stats (Only show when not paired or as secondary info)
+            BentoCard(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    Text("TRẠNG THÁI THIẾT BỊ", style = MaterialTheme.typography.labelSmall, color = NeonEmerald, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        BentoStatCard(
+                            modifier = Modifier.weight(1f),
+                            icon = Icons.Default.GpsFixed,
+                            iconTint = NeonCyan,
+                            title = "GPS",
+                            value = if (myLoc != null) "Hoạt động" else "Đang dò",
+                            subtitle = "Tự động cập nhật"
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Thời gian dùng hôm nay", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+                        BentoStatCard(
+                            modifier = Modifier.weight(1f),
+                            icon = Icons.Default.BatteryChargingFull,
+                            iconTint = NeonEmerald,
+                            title = "PIN",
+                            value = "${myLoc?.batteryLevel ?: 85}%",
+                            subtitle = "Thiết bị học sinh"
+                        )
                     }
-                    Text(
-                        text = "${uiState.detailedAppUsage.sumOf { it.minutesUsed }} phút",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold
-                    )
                 }
             }
         }

@@ -18,21 +18,30 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.SupervisorAccount
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,6 +52,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -64,11 +75,15 @@ fun SignInScreen(
     isLoading: Boolean,
     errorMessage: String?,
     onSignInClick: () -> Unit,
-    onTryDemoClick: (() -> Unit)? = null,
+    onSignIn: (String, String) -> Unit,
+    onSignUp: (String, String) -> Unit,
     selectedRole: UserRole,
     onRoleSelected: (UserRole) -> Unit
 ) {
     val scrollState = rememberScrollState()
+    var usernameInput by remember { mutableStateOf("") }
+    var passwordInput by remember { mutableStateOf("") }
+    var confirmPasswordInput by remember { mutableStateOf("") }
 
     Box(
         modifier = Modifier
@@ -82,12 +97,12 @@ fun SignInScreen(
                 .padding(horizontal = 22.dp, vertical = 36.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // App Logo with Facebook Dark Mode glowing frame
+            // App Logo
             Box(
                 modifier = Modifier
-                    .size(98.dp)
+                    .size(92.dp)
                     .clip(CircleShape)
                     .background(
                         Brush.linearGradient(
@@ -101,78 +116,51 @@ fun SignInScreen(
                     painter = painterResource(id = R.drawable.ic_giadinhso_logo),
                     contentDescription = "Gia Đình Việt Logo",
                     modifier = Modifier
-                        .size(88.dp)
+                        .size(82.dp)
                         .clip(CircleShape),
                     contentScale = ContentScale.Crop
                 )
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             Text(
                 text = "GIA ĐÌNH VIỆT",
-                style = MaterialTheme.typography.headlineLarge,
+                style = MaterialTheme.typography.headlineMedium,
                 color = TextPrimary,
                 fontWeight = FontWeight.ExtraBold,
                 letterSpacing = 1.2.sp
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "Đồng hành cùng con • An tâm mỗi ngày",
+                text = "Định vị GPS • Xác thực bảo mật",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // Sub-tag badge
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(SpaceCardElevated)
-                    .padding(horizontal = 14.dp, vertical = 6.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .clip(CircleShape)
-                            .background(NeonEmerald)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Định vị GPS & Giám sát sử dụng",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Section 1: Role Selection
+            // Role Selection
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "BƯỚC 1: CHỌN VAI TRÒ CỦA BẠN",
+                    text = "BƯỚC 1: CHỌN VAI TRÒ",
                     style = MaterialTheme.typography.labelMedium,
                     color = NeonCyan,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.8.sp
+                    fontWeight = FontWeight.Bold
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 RoleSelectionCard(
                     title = "Phụ huynh",
@@ -186,7 +174,7 @@ fun SignInScreen(
 
                 RoleSelectionCard(
                     title = "Học sinh",
-                    subtitle = "Nhận mã HS & Kết nối",
+                    subtitle = "Kết nối vị trí",
                     iconVector = Icons.Default.School,
                     isSelected = selectedRole == UserRole.CHILD,
                     onClick = { onRoleSelected(UserRole.CHILD) },
@@ -195,24 +183,9 @@ fun SignInScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // Section 2: Google Sign-In
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "BƯỚC 2: TIẾP TỤC VỚI GOOGLE",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = NeonCyan,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.8.sp
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
+            // Error Display
             if (errorMessage != null) {
                 Box(
                     modifier = Modifier
@@ -231,20 +204,16 @@ fun SignInScreen(
                 Spacer(modifier = Modifier.height(14.dp))
             }
 
-            // Authentic Official Google Sign-In Button
+            // Google Sign In Button
             Surface(
                 onClick = onSignInClick,
                 enabled = !isLoading,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(54.dp)
-                    .shadow(
-                        elevation = 6.dp,
-                        shape = RoundedCornerShape(27.dp),
-                        spotColor = Color.Black.copy(alpha = 0.35f)
-                    )
+                    .height(52.dp)
+                    .shadow(elevation = 4.dp, shape = RoundedCornerShape(26.dp))
                     .testTag("google_signin_button"),
-                shape = RoundedCornerShape(27.dp),
+                shape = RoundedCornerShape(26.dp),
                 color = Color.White,
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDADCE0))
             ) {
@@ -264,7 +233,6 @@ fun SignInScreen(
                             horizontalArrangement = Arrangement.Center,
                             modifier = Modifier.padding(horizontal = 16.dp)
                         ) {
-                            // Authentic 4-color Google Vector Icon
                             Image(
                                 painter = painterResource(id = R.drawable.ic_google_logo),
                                 contentDescription = "Google Logo",
@@ -276,48 +244,125 @@ fun SignInScreen(
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = Color(0xFF1F1F1F),
-                                fontSize = 15.sp,
-                                letterSpacing = 0.2.sp
+                                fontSize = 15.sp
                             )
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Security & Privacy Trust Badge
+            // Divider
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.Shield,
-                    contentDescription = null,
-                    tint = NeonEmerald,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
+                Box(modifier = Modifier.weight(1f).height(1.dp).background(SpaceCardBorder))
                 Text(
-                    text = "Bảo mật hai chiều Google Identity & Firebase",
+                    text = "hoặc đăng ký / đăng nhập",
                     style = MaterialTheme.typography.labelSmall,
                     color = TextMuted,
-                    textAlign = TextAlign.Center
+                    modifier = Modifier.padding(horizontal = 10.dp)
                 )
+                Box(modifier = Modifier.weight(1f).height(1.dp).background(SpaceCardBorder))
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            Text(
-                text = "Tuân thủ chính sách bảo vệ dữ liệu trẻ em và gia đình",
-                style = MaterialTheme.typography.bodySmall,
-                color = TextMuted.copy(alpha = 0.8f),
-                textAlign = TextAlign.Center,
-                fontSize = 11.sp
+            Spacer(modifier = Modifier.height(14.dp))
+            
+            var isSignUp by remember { mutableStateOf(false) }
+
+            // Username & Password Fields
+            OutlinedTextField(
+                value = usernameInput,
+                onValueChange = { usernameInput = it },
+                label = { Text("Tên tài khoản") },
+                leadingIcon = { Icon(Icons.Default.SupervisorAccount, contentDescription = null, tint = NeonViolet) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().testTag("username_input"),
+                shape = RoundedCornerShape(14.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = NeonViolet,
+                    unfocusedBorderColor = SpaceCardBorder,
+                    focusedLabelColor = NeonViolet,
+                    unfocusedLabelColor = TextSecondary,
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary
+                )
             )
+            Spacer(modifier = Modifier.height(10.dp))
+            OutlinedTextField(
+                value = passwordInput,
+                onValueChange = { passwordInput = it },
+                label = { Text("Mật khẩu") },
+                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = NeonViolet) },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                modifier = Modifier.fillMaxWidth().testTag("password_input"),
+                shape = RoundedCornerShape(14.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = NeonViolet,
+                    unfocusedBorderColor = SpaceCardBorder,
+                    focusedLabelColor = NeonViolet,
+                    unfocusedLabelColor = TextSecondary,
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary
+                )
+            )
+            if (isSignUp) {
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = confirmPasswordInput,
+                    onValueChange = { confirmPasswordInput = it },
+                    label = { Text("Nhập lại mật khẩu") },
+                    leadingIcon = { Icon(Icons.Default.Shield, contentDescription = null, tint = NeonViolet) },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth().testTag("confirm_password_input"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = NeonViolet,
+                        unfocusedBorderColor = SpaceCardBorder,
+                        focusedLabelColor = NeonViolet,
+                        unfocusedLabelColor = TextSecondary,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    )
+                )
+            }
+            Spacer(modifier = Modifier.height(14.dp))
+            Button(
+                onClick = { 
+                    if (isSignUp) {
+                        if (passwordInput == confirmPasswordInput) {
+                            onSignUp(usernameInput, passwordInput)
+                        }
+                    } else {
+                        onSignIn(usernameInput, passwordInput)
+                    }
+                },
+                enabled = !isLoading,
+                modifier = Modifier.fillMaxWidth().height(46.dp).testTag("auth_button"),
+                shape = RoundedCornerShape(23.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = NeonViolet)
+            ) {
+                Text(if (isSignUp) "Đăng ký" else "Đăng nhập", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Text(
+                text = if (isSignUp) "Đã có tài khoản? Đăng nhập" else "Chưa có tài khoản? Đăng ký",
+                style = MaterialTheme.typography.bodyMedium,
+                color = NeonCyan,
+                modifier = Modifier.clickable { isSignUp = !isSignUp }.padding(8.dp)
+            )
+
 
             Spacer(modifier = Modifier.height(20.dp))
         }
